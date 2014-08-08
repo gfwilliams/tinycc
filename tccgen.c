@@ -5810,7 +5810,7 @@ static void gen_function(Sym *sym)
 {
     ind = cur_text_section->data_offset;
     /* NOTE: we patch the symbol size later */
-    put_extern_sym(sym, cur_text_section, ind, 0);
+    put_extern_sym(sym, cur_text_section, ind+1, 0);
     funcname = get_tok_str(sym->v, NULL);
     func_ind = ind;
     /* Initialize VLA state */

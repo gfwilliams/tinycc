@@ -227,8 +227,29 @@ char *default_elfinterp(struct TCCState *s)
 }
 #endif
 
+// Output thumb
+void ot(uint16_t i)
+{
+  int ind1;
+
+  ind1 = ind + 2;
+  if (!cur_text_section)
+    tcc_error("compiler error! This happens f.ex. if the compiler\n"
+         "can't evaluate constant expressions outside of a function.");
+  if (ind1 > cur_text_section->data_allocated)
+    section_realloc(cur_text_section, ind1);
+  cur_text_section->data[ind++] = i&255;
+  i>>=8;
+  cur_text_section->data[ind++] = i&255;
+}
+
+// output ARM
 void o(uint32_t i)
 {
+  // ensure we're aligned by outputting a thumb NOP
+  if (ind&3) 
+    ot(0xbf00);
+
   /* this is a good place to start adding big-endian support*/
   int ind1;
 
@@ -246,6 +267,7 @@ void o(uint32_t i)
   i>>=8;
   cur_text_section->data[ind++] = i;
 }
+
 
 static uint32_t stuff_const(uint32_t op, uint32_t c)
 {
@@ -384,7 +406,7 @@ void gsym_addr(int t, int a)
 {
   uint32_t *x;
   int lt;
-  while(t) {
+/*  while(t) {
     x=(uint32_t *)(cur_text_section->data + t);
     t=decbranch(lt=t);
     if(a==lt+4)
@@ -393,7 +415,7 @@ void gsym_addr(int t, int a)
       *x &= 0xff000000;
       *x |= encbranch(lt,a,1);
     }
-  }
+  }*/
 }
 
 void gsym(int t)
@@ -609,15 +631,21 @@ void load(int r, SValue *sv)
     }
   } else {
     if (v == VT_CONST) {
-      op=stuff_const(0xE3A00000|(intr(r)<<12),sv->c.ul);
-      if (fr & VT_SYM || !op) {
+      if (fr & VT_SYM) {
+        tcc_error("VT_SYM");
+      } else if (sv->c.ul>=0 && sv->c.ul<=255) {
+        ot(0x2000 | (r<<8) | sv->c.ul); // movs rX,v
+      } else tcc_error("out of range");
+
+      //op=stuff_const(0xE3A00000|(intr(r)<<12),sv->c.ul);
+/*      if (fr & VT_SYM || !op) {
         o(0xE59F0000|(intr(r)<<12));
         o(0xEA000000);
         if(fr & VT_SYM)
 	  greloc(cur_text_section, sv->sym, ind, R_ARM_ABS32);
         o(sv->c.ul);
-      } else
-        o(op);
+      } else*/
+        
       return;
     } else if (v == VT_LOCAL) {
       op=stuff_const(0xE28B0000|(intr(r)<<12),sv->c.ul);
@@ -1283,7 +1311,14 @@ void gfunc_prolog(CType *func_type)
     if (n < 4)
       n += (size + 3) / 4;
   }
-  o(0xE1A0C00D); /* mov ip,sp */
+  ot(0xb480); /* push {r7} */
+ /* b083      	sub	sp, #12 */
+  ot(0xaf00); /* add	r7, sp, #0 */
+/*	6078      	str	r0, [r7, #4]
+        f107 070c 	add.w	r7, r7, #12
+*/
+
+#if 0
   if (func_var)
     n=4;
   if (n) {
@@ -1302,8 +1337,11 @@ void gfunc_prolog(CType *func_type)
   }
   o(0xE92D5800); /* save fp, ip, lr */
   o(0xE1A0B00D); /* mov fp, sp */
+#endif
   func_sub_sp_offset = ind;
+#if 0
   o(0xE1A00000); /* nop, leave space for stack adjustment in epilog */
+#endif
 
 #ifdef TCC_ARM_EABI
   if (float_abi == ARM_HARD_FLOAT) {
@@ -1369,7 +1407,8 @@ void gfunc_epilog(void)
     }
   }
 #endif
-  o(0xE89BA800); /* restore fp, sp, pc */
+  ot(0x46bd); /* mov	sp, r7 */
+  ot(0xbc80); /* pop {r7} */
   diff = (-loc + 3) & -4;
 #ifdef TCC_ARM_EABI
   if(!leaffunc)
@@ -1389,6 +1428,9 @@ void gfunc_epilog(void)
       *(uint32_t *)(cur_text_section->data + func_sub_sp_offset) = 0xE1000000|encbranch(func_sub_sp_offset,addr,1);
     }
   }
+
+  ot(0x4770); /* bx lr */
+  if (ind&3) ot(0xbf00); /* nop - padding */
 }
 
 /* generate a jump to a label */
@@ -1396,7 +1438,11 @@ int gjmp(int t)
 {
   int r;
   r=ind;
-  o(0xE0000000|encbranch(r,t,1));
+  int val = ((t-r)>>1) - 2;
+  if (val<-1024 || val>1023)
+    tcc_error("branch out of range");
+  ot(0xE000 | (val&0x07FF));
+//  o(0xE0000000|encbranch(r,t,1));
   return r;
 }
 
