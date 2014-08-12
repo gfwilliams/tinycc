@@ -381,41 +381,43 @@ void stuff_const_harder(uint32_t op, uint32_t v) {
 
 ST_FUNC uint32_t encbranch(int pos, int addr, int fail)
 {
-  addr-=pos+8;
-  addr/=4;
-  if(addr>=0x1000000 || addr<-0x1000000) {
+  // FIXME: conditional branches are less
+  addr-=pos+4;
+  addr/=2;
+  if(addr>=1023 || addr<-1024) {
     if(fail)
-      tcc_error("FIXME: function bigger than 32MB");
+      tcc_error("FIXME: function bigger than 2kB");
     return 0;
   }
-  return 0x0A000000|(addr&0xffffff);
+  return addr&0x7ff;
 }
 
 int decbranch(int pos)
 {
   int x;
-  x=*(uint32_t *)(cur_text_section->data + pos);
-  x&=0x00ffffff;
-  if(x&0x800000)
-    x-=0x1000000;
-  return x*4+pos+8;
+  x=*(uint16_t *)(cur_text_section->data + pos);
+  x&=0x7ff;
+  if(x&0x400)
+    x-=0x800;
+  int y = (x*2) + pos+4;
+  return y;
 }
 
 /* output a symbol and patch all calls to it */
 void gsym_addr(int t, int a)
 {
-  uint32_t *x;
+  uint16_t *x;
   int lt;
-/*  while(t) {
-    x=(uint32_t *)(cur_text_section->data + t);
+  while(t) {
+    x=(uint16_t *)(cur_text_section->data + t);    
     t=decbranch(lt=t);
-    if(a==lt+4)
-      *x=0xE1A00000; // nop
-    else {
-      *x &= 0xff000000;
+    if(a==lt+2) // if jumping to the next instruction, kill this
+      *x=0xbf00; // nop
+    else { // otherwise 
+      *x &= 0xF800;
       *x |= encbranch(lt,a,1);
     }
-  }*/
+  }
 }
 
 void gsym(int t)
