@@ -1,6 +1,9 @@
 ARM Thumb output
 ==============
 
+**This is a very old piece or work which only works very minimally** Please see
+https://git.erlendjs.no/erlendjs/tinycc as it appears to be a lot more capable
+
 To use this:
 
 * Configure it with cross-compilation enabled, then use any ARM target
